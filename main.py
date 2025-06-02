@@ -95,6 +95,7 @@ class LeastSquaresApp:
             solution[i] = (matrix[i][-1] - sum(matrix[i][j] * solution[j] for j in range(i + 1, n))) / matrix[i][i]
         return solution
 
+    # Простейшая линейная функция для рисования и подсчёта ошибок
     def linear(self, x, a, b):
         return a * x + b
 
@@ -105,13 +106,34 @@ class LeastSquaresApp:
         return a * x ** 3 + b * x ** 2 + c * x + d
 
     def exponential(self, x, a, b):
-        return a * math.exp(b * x) if x != 0 else 0
+        # y = a * exp(bx)
+        return a * math.exp(b * x)
 
     def logarithmic(self, x, a, b):
-        return a * math.log(x) + b if x > 0 else 0
+        # y = a * ln(x) + b, предполагаем x > 0
+        return a * math.log(x) + b
 
     def power(self, x, a, b):
-        return a * x ** b if x > 0 else 0
+        # y = a * x^b, предполагаем x > 0
+        return a * (x ** b)
+
+    def linear_regression(self, X, Y):
+        """
+        Возвращает [slope, intercept] для линейной регрессии Y = slope * X + intercept.
+        """
+        n = len(X)
+        sum_x = sum(X)
+        sum_y = sum(Y)
+        sum_xy = sum(xi * yi for xi, yi in zip(X, Y))
+        sum_x2 = sum(xi ** 2 for xi in X)
+
+        denom = n * sum_x2 - sum_x ** 2
+        if abs(denom) < 1e-10:
+            return None
+
+        slope = (n * sum_xy - sum_x * sum_y) / denom
+        intercept = (sum_y * sum_x2 - sum_x * sum_xy) / denom
+        return [slope, intercept]
 
     def fit_model(self, model_name):
         x = [p[0] for p in self.data]
@@ -119,16 +141,8 @@ class LeastSquaresApp:
         n = len(x)
 
         if model_name == 'Линейная':
-            sum_x = sum(x)
-            sum_y = sum(y)
-            sum_xy = sum(xi * yi for xi, yi in zip(x, y))
-            sum_x2 = sum(xi ** 2 for xi in x)
-
-            denom = n * sum_x2 - sum_x ** 2
-            if denom == 0: return None
-            a = (n * sum_xy - sum_x * sum_y) / denom
-            b = (sum_y * sum_x2 - sum_x * sum_xy) / denom
-            return [a, b]
+            coeffs = self.linear_regression(x, y)
+            return coeffs  # [a, b]
 
         elif model_name == 'Квадратичная':
             matrix = [
@@ -153,32 +167,49 @@ class LeastSquaresApp:
             return self.gauss_elimination(matrix)
 
         elif model_name == 'Экспоненциальная':
-            try:
-                y_log = [math.log(yi) if yi > 0 else 0 for yi in y]
-                lin_coeffs = self.fit_model('Линейная')
-                if lin_coeffs:
-                    b = lin_coeffs[0]
-                    a = math.exp(lin_coeffs[1])
-                    return [a, b]
-            except:
+            filtered = [(xi, yi) for xi, yi in zip(x, y) if yi > 0]
+            if len(filtered) < 2:
                 return None
+            x_filt, y_filt = zip(*filtered)
+            Y_log = [math.log(yi) for yi in y_filt]
+            coeffs_lin = self.linear_regression(list(x_filt), Y_log)
+            if not coeffs_lin:
+                return None
+            b = coeffs_lin[0]
+            ln_a = coeffs_lin[1]
+            a = math.exp(ln_a)
+            return [a, b]
 
         elif model_name == 'Логарифмическая':
-            x_log = [math.log(xi) if xi > 0 else 0 for xi in x]
-            lin_coeffs = self.fit_model('Линейная')
-            return lin_coeffs
+            filtered = [(xi, yi) for xi, yi in zip(x, y) if xi > 0]
+            if len(filtered) < 2:
+                return None
+            x_filt, y_filt = zip(*filtered)
+            X_log = [math.log(xi) for xi in x_filt]
+            coeffs_lin = self.linear_regression(X_log, list(y_filt))
+            if not coeffs_lin:
+                return None
+            a = coeffs_lin[0]
+            b = coeffs_lin[1]
+            return [a, b]
 
         elif model_name == 'Степенная':
-            try:
-                x_log = [math.log(xi) if xi > 0 else 0 for xi in x]
-                y_log = [math.log(yi) if yi > 0 else 0 for yi in y]
-                lin_coeffs = self.fit_model('Линейная')
-                if lin_coeffs:
-                    b = lin_coeffs[0]
-                    a = math.exp(lin_coeffs[1])
-                    return [a, b]
-            except:
+            # y = a * x^b  => ln(y) = ln(a) + b ln(x)
+            # строим линейную регрессию для (ln(x), ln(y))
+            filtered = [(xi, yi) for xi, yi in zip(x, y) if xi > 0 and yi > 0]
+            if len(filtered) < 2:
                 return None
+            x_filt, y_filt = zip(*filtered)
+            X_log = [math.log(xi) for xi in x_filt]
+            Y_log = [math.log(yi) for yi in y_filt]
+            coeffs_lin = self.linear_regression(X_log, Y_log)
+            if not coeffs_lin:
+                return None
+            b = coeffs_lin[0]
+            ln_a = coeffs_lin[1]
+            a = math.exp(ln_a)
+            return [a, b]
+
         return None
 
     def calculate(self):
@@ -190,10 +221,11 @@ class LeastSquaresApp:
         for name, func, _ in self.models:
             try:
                 coeffs = self.fit_model(name)
-                if not coeffs: continue
+                if not coeffs:
+                    continue
 
-                # Расчет ошибок
-                sse = 0
+                # Расчёт ошибок
+                sse = 0.0
                 y_mean = sum(y for x, y in self.data) / len(self.data)
                 sst = sum((y - y_mean) ** 2 for x, y in self.data)
 
@@ -207,6 +239,8 @@ class LeastSquaresApp:
 
                 mse = math.sqrt(sse / len(self.data)) if sse != float('inf') else float('inf')
                 r2 = 1 - (sse / sst) if sst != 0 else 0
+
+                # Корреляцию Пирсона считаем только для линейной модели
                 pearson = self.calculate_pearson() if name == 'Линейная' else None
 
                 results.append({
@@ -217,7 +251,7 @@ class LeastSquaresApp:
                     'pearson': pearson,
                     'func': func
                 })
-            except Exception as e:
+            except Exception:
                 continue
 
         if not results:
@@ -230,11 +264,11 @@ class LeastSquaresApp:
 
         for res in results:
             text = f"{res['name']}:\n"
-            text += f"Коэффициенты: {', '.join(f'{c:.4f}' for c in res['coeffs'])}\n"
-            text += f"СКО: {res['mse']:.4f}\n"
-            text += f"R²: {res['r2']:.4f}\n"
+            text += f"  Коэффициенты: {', '.join(f'{c:.4f}' for c in res['coeffs'])}\n"
+            text += f"  СКО (RMSE): {res['mse']:.4f}\n"
+            text += f"  R²: {res['r2']:.4f}\n"
             if res['pearson'] is not None:
-                text += f"Корреляция Пирсона: {res['pearson']:.4f}\n"
+                text += f"  Корреляция Пирсона: {res['pearson']:.4f}\n"
             text += "\n"
             self.result_text.insert(tk.END, text)
 
@@ -247,7 +281,7 @@ class LeastSquaresApp:
         if best:
             x_min = min(x_vals)
             x_max = max(x_vals)
-            x_plot = [x_min + (x_max - x_min) * i / 100 for i in range(100)]
+            x_plot = [x_min + (x_max - x_min) * i / 100 for i in range(101)]
             y_plot = [best['func'](x, *best['coeffs']) for x in x_plot]
             self.ax.plot(x_plot, y_plot, 'r-', label=f"Лучшая: {best['name']}")
 
