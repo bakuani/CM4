@@ -34,6 +34,11 @@ class LeastSquaresApp:
         self.y_entry.pack()
         ttk.Button(control_frame, text="Добавить точку", command=self.add_point).pack(pady=5)
 
+        # Список точек
+        ttk.Label(control_frame, text="Точки:").pack(pady=(20,5))
+        self.points_listbox = tk.Listbox(control_frame, height=10)
+        self.points_listbox.pack(fill=tk.X)
+
         # Управление данными
         ttk.Button(control_frame, text="Загрузить файл", command=self.load_file).pack(pady=5)
         ttk.Button(control_frame, text="Очистить данные", command=self.clear_data).pack(pady=5)
@@ -56,8 +61,25 @@ class LeastSquaresApp:
             self.data.append((x, y))
             self.x_entry.delete(0, tk.END)
             self.y_entry.delete(0, tk.END)
+            # Обновляем список и график
+            self.update_points_list()
+            self.redraw_points()
         except ValueError:
             messagebox.showerror("Ошибка", "Некорректные данные")
+
+    def update_points_list(self):
+        self.points_listbox.delete(0, tk.END)
+        for x, y in self.data:
+            self.points_listbox.insert(tk.END, f"({x:.3f}, {y:.3f})")
+
+    def redraw_points(self):
+        self.ax.clear()
+        if self.data:
+            x_vals, y_vals = zip(*self.data)
+            self.ax.scatter(x_vals, y_vals, label='Данные')
+        self.ax.legend()
+        self.ax.grid(True)
+        self.canvas.draw()
 
     def load_file(self):
         file_path = filedialog.askopenfilename()
@@ -66,11 +88,14 @@ class LeastSquaresApp:
                 with open(file_path, 'r') as f:
                     self.data = [tuple(map(float, line.strip().split())) for line in f]
                 messagebox.showinfo("Успех", f"Загружено {len(self.data)} точек")
+                self.update_points_list()
+                self.redraw_points()
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
 
     def clear_data(self):
         self.data = []
+        self.points_listbox.delete(0, tk.END)
         self.ax.clear()
         self.canvas.draw()
         self.result_text.delete(1.0, tk.END)
@@ -95,7 +120,11 @@ class LeastSquaresApp:
 
         solution = [0] * n
         for i in range(n - 1, -1, -1):
-            solution[i] = (matrix[i][-1] - sum(matrix[i][j] * solution[j] for j in range(i + 1, n))) / matrix[i][i]
+            sum_ = 0.0
+            for j in range(i + 1, n):
+                sum_ += matrix[i][j] * solution[j]
+            solution[i] = (matrix[i][-1] - sum_) / matrix[i][i]
+
         return solution
 
     # Функции моделей для рисования
@@ -391,7 +420,7 @@ class LeastSquaresApp:
             text += "\n"
             self.result_text.insert(tk.END, text)
 
-        # Отрисовка графиков
+        # Отрисовка графиков вместе с уже отрисованными точками
         self.ax.clear()
         x_vals = [p[0] for p in self.data]
         y_vals = [p[1] for p in self.data]
